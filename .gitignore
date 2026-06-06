@@ -1,0 +1,1 @@
+*.pyc pycache/ .DS_Store *.swp *.swo venv/ .env
