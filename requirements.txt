@@ -1,0 +1,52 @@
+No external dependencies required.
+Python 3.6+ standard library only (random, sys)
+
+---
+
+## How to Apply These Changes
+
+### Option A: Edit on GitHub.com (easiest for small fixes)
+
+1. Go to `https://github.com/Fals3Proph3t/card_gen_tester`
+2. Click on **`cardgen.py`**
+3. Click the pencil icon (✏️) to edit
+4. Replace the entire content with the new `cardgen.py` above
+5. Scroll down, add a commit message like `Add Mastercard + Discover brands, clean up README clutter` and click **Commit changes**
+6. Click the **Add file** dropdown → **Create new file**
+7. Name it `.gitignore`, paste the content above, commit
+8. Repeat for `requirements.txt`
+
+### Option B: Clone and push
+
+```bash
+# Clone your repo
+git clone https://github.com/Fals3Proph3t/card_gen_tester.git
+cd card_gen_tester
+
+# Replace cardgen.py and README.md with the content above
+# Then create the missing files:
+echo '*.pyc
+__pycache__/
+*.pyo
+*.pyd
+.DS_Store
+*.swp
+*.swo
+*~
+venv/
+.venv/
+.env
+*.egg-info/
+dist/
+build/' > .gitignore
+
+echo '# No external dependencies required.
+# Python 3.6+ standard library only (random, sys)' > requirements.txt
+
+# Remove the old README clutter that was appended at the bottom
+# (the new README.md above replaces everything)
+
+# Stage, commit, and push
+git add .
+git commit -m "Add Mastercard + Discover brands, .gitignore, requirements.txt, clean README"
+git push
