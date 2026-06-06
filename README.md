@@ -14,13 +14,13 @@ python3 cardgen.py
 curl -sL https://raw.githubusercontent.com/YOUR_USER/cardgen/main/cardgen.py | python3
 
 ```
-How It Works
-You provide known BINs and partial account numbers in cardgen.py
-The program fills unknown positions with random digits
-It calculates the correct Luhn check digit for the final position
-Every generated PAN passes standard Luhn validation
-Supported Card Types
+# How It Works
+1.) You provide known BINs and partial account numbers in cardgen.py
+2.) The program fills unknown positions with random digits
+3.) It calculates the correct Luhn check digit for the final position
+4.) Every generated PAN passes standard Luhn validation
 
+# Supported Card Types
 
 #	Brand	Length	Source
 1	Visa	16	Partial PANs
@@ -28,16 +28,16 @@ Supported Card Types
 3	Amex	15	Partial PANs
 4	Discover	16	BIN prefixes
 
-Customizing BINs
+# Customizing BINs
 Edit the BRANDS dictionary in cardgen.py:
 
 python
 
 
-Luhn Algorithm
+# Luhn Algorithm
 The Luhn algorithm (mod 10) is a checksum used by all major card networks:
 
-From the rightmost digit, double every second digit
+From the rightmost digit, double every second digit.
 If doubling produces a two-digit number, sum those digits (or subtract 9)
 Sum all digits
 The total must be divisible by 10
