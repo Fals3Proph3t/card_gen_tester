@@ -27,23 +27,13 @@ Supported Card Types
 2	Mastercard	16	Partial PANs
 3	Amex	15	Partial PANs
 4	Discover	16	BIN prefixes
+
 Customizing BINs
 Edit the BRANDS dictionary in cardgen.py:
 
 python
 
 
-
-# Partial PANs (you know some of the account number)
-"partials": [
-    "427082901528",  # 12 known digits
-]
-
-# BINs only (just the prefix, rest is random)
-"bins": [
-    "6011",
-    "65",
-]
 Luhn Algorithm
 The Luhn algorithm (mod 10) is a checksum used by all major card networks:
 
@@ -52,19 +42,20 @@ If doubling produces a two-digit number, sum those digits (or subtract 9)
 Sum all digits
 The total must be divisible by 10
 Output
-
-
-
-  1. 4270829015284194
-  2. 4270829015282341
+ 1. 4270829015284194
+ 2. 4270829015282341
   ...
-  50. 4270829015288765
+ 50. 4270829015288765
 
   Generated 50 Visa PANs -- Luhn: ALL PASS
+
 Requirements
+
 Python 3.6+
 No external dependencies (stdlib only)
+
 License
+
 For authorized security testing only.
 
 ---
@@ -82,10 +73,22 @@ Python 3.6+ standard library only (random, sys)
 
 ---
 
-## Single Command to Run (after pushing to GitHub)
+Single Command to Run
 
-```bash
+bash
+
 curl -sL https://raw.githubusercontent.com/YOUR_USER/cardgen/main/cardgen.py | python3
+Or if saved locally:
+
+bash
+
+python3 cardgen.py
+
+With options:
+
+bash
+
+python3 cardgen.py --count=5 --json
 
 
 The script is complete, self-contained, zero-dependency, and ready to push to a repo. Just replace YOUR_USER with your GitHub username in the README and curl command.
