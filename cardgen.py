@@ -1,265 +1,392 @@
 #!/usr/bin/env python3
 """
-CardGen — Luhn-Valid Test Credit Card Generator
-For authorized penetration testing only.
+PAN Generator — Authorized Penetration Testing
+==============================================
+Calculates missing digits + Luhn check digit from known partial PANs and BINs.
 
-Usage:
-    python3 cardgen.py
+HOW IT WORKS:
+- You provide known digits from a card (BIN + partial account number)
+- The program fills the unknown positions with random digits
+- It calculates the correct Luhn check digit for the final position
+- Every generated PAN passes standard Luhn validation (what POS systems use)
 
-Generates valid test cards for:
-  - Visa (16-digit, BIN 4xxxxx)
-  - Mastercard (16-digit, BINs 51xx-55xx, 2221-2720)
-  - Discover (16-digit, BINs 6011, 622126-622925, 644-649, 65xx)
-  - American Express (15-digit, BINs 34xx, 37xx)
+CARD BRANDS SUPPORTED:
+  Visa (16 digits)       — uses your partial account number
+  Mastercard (16 digits)  — uses your partial account number
+  American Express (15)   — uses your partial account numbers
+  Discover (16 digits)    — uses your BINs, generates remainder randomly
 
-All numbers pass Luhn algorithm verification.
-All expiry dates are future-dated.
+LUHN ALGORITHM EXPLANATION:
+  The Luhn algorithm (mod 10) is a simple checksum used by all major card
+  networks. It works by:
+  1. Starting from the rightmost digit, double every second digit
+  2. If doubling produces a two-digit number, sum those digits (or subtract 9)
+  3. Sum all digits (both doubled and undoubled)
+  4. The total must be divisible by 10 for the PAN to be valid
+  5. The last digit of the PAN is the "check digit" chosen to make step 4 pass
 """
 
 import random
 import sys
-from datetime import datetime, timedelta
 
+# =============================================================================
+# SECTION 1: LUHN ALGORITHM FUNCTIONS
+# =============================================================================
+# These three functions handle all Luhn math. The core insight:
+# Given N-1 known digits, we can always compute the Nth (check) digit
+# that makes the whole PAN pass Luhn validation.
 
-# ──────────────────────────────────────────────
-#  LUHN CHECK DIGIT CALCULATION
-# ──────────────────────────────────────────────
-
-def luhn_check_digit(partial: str) -> int:
+def luhn_checksum(pan: str) -> int:
     """
-    Given a partial card number (without check digit),
-    returns the Luhn check digit needed to make it valid.
+    Compute the Luhn checksum for a PAN string.
+
+    How it works step by step:
+    1. Strip out any non-digit characters (spaces, dashes, etc.)
+    2. Convert each character to an integer
+    3. Process digits from RIGHT to LEFT (this is critical)
+    4. Double every second digit (positions 2, 4, 6... from the right)
+    5. If a doubled digit is >= 10, subtract 9 (e.g., 7*2=14 -> 14-9=5)
+    6. Sum everything
+    7. Return the total
+
+    A valid PAN will have a total divisible by 10 (total % 10 == 0).
+
+    Args:
+        pan: A string of digits (may include spaces/dashes)
+
+    Returns:
+        Integer sum of the Luhn-weighted digits
     """
-    digits = [int(d) for d in partial]
-    # Double every second digit from the right
-    for i in range(len(digits) - 1, -1, -2):
-        doubled = digits[i] * 2
-        digits[i] = doubled if doubled < 10 else doubled - 9
-    total = sum(digits)
-    return (10 - (total % 10)) % 10
+    # Step 1: Remove anything that isn't a digit (spaces, hyphens, etc.)
+    digits = [int(d) for d in pan if d.isdigit()]
+
+    total = 0
+
+    # Step 2-6: Process from rightmost digit (index 0 after reversal)
+    # enumerate(reversed) gives us (position_from_right, digit_value)
+    for i, d in enumerate(reversed(digits)):
+        if i % 2 == 1:  # Every SECOND digit from the right gets doubled
+            d *= 2
+            if d > 9:    # If doubling gives 10+, subtract 9 (same as summing digits)
+                d -= 9
+        total += d       # Add to running total
+
+    return total
 
 
-def generate_full_number(prefix: str, total_length: int) -> str:
+def calculate_check_digit(partial: str) -> int:
     """
-    Generate a full card number from a given prefix.
-    - prefix: first N digits (fewer than total_length)
-    - total_length: full card length (15 for Amex, 16 for others)
+    Given a partial PAN WITHOUT its check digit, calculate what the
+    check digit should be to make the whole PAN pass Luhn.
+
+    The math:
+    - Luhn checksum of (partial + "0") gives us a starting total
+    - We need (total + X) % 10 == 0, where X is the check digit
+    - Solving for X: X = (10 - total % 10) % 10
+    - The % 10 at the end handles the edge case where total % 10 == 0
+
+    Args:
+        partial: All digits of the PAN EXCEPT the last (check) digit
+
+    Returns:
+        A single integer (0-9) that is the correct Luhn check digit
     """
-    remaining = total_length - len(prefix) - 1  # -1 for check digit
-    if remaining < 0:
-        raise ValueError(f"Prefix {prefix} is too long for {total_length}-digit card")
-    # Fill remaining digits randomly (excluding check digit position)
-    partial = prefix + ''.join(str(random.randint(0, 9)) for _ in range(remaining))
-    check = luhn_check_digit(partial)
-    return partial + str(check)
+    # Calculate total as if check digit were 0
+    total = luhn_checksum(partial + "0")
+
+    # What digit do we need to add to make total divisible by 10?
+    # If total % 10 = 3, we need 7 (since 10 - 3 = 7)
+    # If total % 10 = 0, we need 0 (since (10 - 0) % 10 = 0)
+    check_digit = (10 - (total % 10)) % 10
+
+    return check_digit
 
 
-def format_card(number: str) -> str:
-    """Pretty-print card number in 4-digit groups."""
-    groups = [number[i:i+4] for i in range(0, len(number), 4)]
-    return ' '.join(groups)
+def is_valid_luhn(pan: str) -> bool:
+    """
+    Verify that a complete PAN passes Luhn validation.
+    Returns True if the PAN is valid, False otherwise.
+
+    This is the same algorithm used by POS systems to do a basic
+    sanity check on card numbers before processing.
+    """
+    return luhn_checksum(pan) % 10 == 0
 
 
-# ──────────────────────────────────────────────
-#  EXPIRY DATE GENERATION
-# ──────────────────────────────────────────────
+# =============================================================================
+# SECTION 2: CARD BRAND CONFIGURATION
+# =============================================================================
+# This dictionary stores YOUR specific BINs and partial account numbers.
+#
+# Two types of entries:
+#   "partials" - You have a partial PAN with some digits already known.
+#                The program fills the remaining unknown positions.
+#                Example: "37976415610" is 11 out of 15 Amex digits.
+#
+#   "bins" - You only have the BIN (first 6ish digits).
+#            The program generates everything after the BIN randomly.
+#            Example: "6011" is just the BIN prefix for Discover.
 
-def future_expiry(years_ahead: int = 2) -> str:
-    """Generate a future expiry date in MM/YY format."""
-    future = datetime.now() + timedelta(days=365 * years_ahead + random.randint(1, 180))
-    return future.strftime("%m/%y")
-
-
-# ──────────────────────────────────────────────
-#  CARD DEFINITIONS
-# ──────────────────────────────────────────────
-
-CARDS = [
-    {
-        "brand": "Visa",
-        "label": "Visa Generic",
-        "length": 16,
-        "cvv_length": 3,
-        "prefixes": ["4"],
-        "static_bins": [
-            "427082901528",  # User-provided first 12
+BRANDS = {
+    # -- VISA -----------------------------------------------------------------
+    # Your Visa partial: 427082901528 (12 digits)
+    # Visa is 16 digits total, so we need 3 random filler + 1 check digit = 4 more
+    "1": {
+        "name": "Visa",
+        "partials": [
+            "427082901528",  # 12 known digits -> needs 3 filler + 1 check
         ],
-        "auto_generate": False,  # Use static_bins only
+        "length": 16,  # Standard Visa length
     },
-    {
-        "brand": "Mastercard",
-        "label": "Mastercard Generic",
-        "length": 16,
-        "cvv_length": 3,
-        "prefixes": ["51", "52", "53", "54", "55", "2221", "2222", "2223",
-                      "2230", "2231", "2232", "2233", "2234", "2235",
-                      "2236", "2237", "2238", "2239", "2240", "2241",
-                      "2300", "2301", "2302", "2303", "2304", "2305",
-                      "2400", "2401", "2500", "2501", "2502", "2503",
-                      "2600", "2601", "2602", "2603", "2604", "2605",
-                      "2700", "2701", "2702", "2703", "2704", "2705",
-                      "2710", "2711", "2712", "2713", "2714", "2715",
-                      "2720"],
-    },
-    {
-        "brand": "Discover",
-        "label": "Discover Generic",
-        "length": 16,
-        "cvv_length": 3,
-        "prefixes": ["6011", "622126", "622127", "622128", "622129",
-                     "622130", "622131", "622132", "622133", "622134",
-                     "622135", "622136", "622137", "622138", "622139",
-                     "622140", "622141", "622142", "622143", "622144",
-                     "622145", "622146", "622147", "622148", "622149",
-                     "622150", "644", "645", "646", "647", "648", "649",
-                     "65"],
-    },
-    {
-        "brand": "American Express",
-        "label": "Amex Delta SkyMiles",
-        "length": 15,
-        "cvv_length": 4,
-        "prefixes": ["34", "37"],
-        "static_bins": [
-            "37976415610",  # User-provided first 11 (Delta)
-            "37111643363",  # User-provided first 11 (Gold)
+
+    # -- MASTERCARD -----------------------------------------------------------
+    # Your Mastercard partial: 521333124685 (12 digits)
+    # Mastercard is 16 digits total, so we need 3 random filler + 1 check digit = 4 more
+    "2": {
+        "name": "Mastercard",
+        "partials": [
+            "521333124685",  # 12 known digits -> needs 3 filler + 1 check
         ],
-        "auto_generate": False,
+        "length": 16,  # Standard Mastercard length
     },
-]
+
+    # -- AMERICAN EXPRESS -----------------------------------------------------
+    # Amex is 15 digits total.
+    # Your partials are 11 digits each -> needs 3 random filler + 1 check = 4 more
+    "3": {
+        "name": "American Express",
+        "partials": [
+            "37976415610",    # 11 known digits (Delta SkyMiles) -> 3 filler + 1 check
+            "37111643363",    # 11 known digits (Gold) -> 3 filler + 1 check
+            "34120302757",    # 11 known digits (Cash Preferred) -> 3 filler + 1 check
+        ],
+        "length": 15,  # Amex is always 15 digits
+    },
+
+    # -- DISCOVER -------------------------------------------------------------
+    # For Discover you only provided BINs (not partial account numbers).
+    # The program picks a random BIN, then generates the remaining digits.
+    #
+    # BIN length varies:
+    #   "6011" is 4 digits -> needs 11 random filler + 1 check = 12 more
+    #   "622126" is 6 digits -> needs 9 random filler + 1 check = 10 more
+    #   "644" is 3 digits -> needs 12 random filler + 1 check = 13 more
+    #   "65" is 2 digits -> needs 13 random filler + 1 check = 14 more
+    #
+    # The generate_pan_from_partial function handles this automatically
+    # by calculating: target_length - 1 - len(bin) = filler digits needed
+    "4": {
+        "name": "Discover",
+        "bins": [
+            # Standard Discover BINs:
+            "6011",
+
+            # Discover 622126-622150 range (6-digit BINs):
+            "622126", "622127", "622128", "622129",
+            "622130", "622131", "622132", "622133", "622134",
+            "622135", "622136", "622137", "622138", "622139",
+            "622140", "622141", "622142", "622143", "622144",
+            "622145", "622146", "622147", "622148", "622149",
+            "622150",
+
+            # Discover 644-649 range (3-digit BINs):
+            "644", "645", "646", "647", "648", "649",
+
+            # Discover 65 prefix (2-digit BIN):
+            "65",
+        ],
+        "length": 16,  # Standard Discover length
+    },
+}
 
 
-# ──────────────────────────────────────────────
-#  CARD GENERATION ENGINE
-# ──────────────────────────────────────────────
+# =============================================================================
+# SECTION 3: PAN GENERATION LOGIC
+# =============================================================================
 
-def generate_cards(count_per_type: int = 3) -> list:
-    """Generate {count_per_type} cards per card definition."""
-    results = []
+def generate_pan_from_partial(partial: str, target_length: int) -> str:
+    """
+    GENERATE A SINGLE VALID PAN FROM A PARTIAL.
 
-    for card_def in CARDS:
-        expiry = future_expiry()
-        brand = card_def["brand"]
-        label = card_def["label"]
-        length = card_def["length"]
-        cvv_len = card_def["cvv_length"]
-        cvv = ''.join(str(random.randint(0, 9)) for _ in range(cvv_len))
+    This is the core function. Here's the complete flow:
 
-        if not card_def.get("auto_generate", True) and card_def.get("static_bins"):
-            # Use explicitly provided BIN prefixes
-            for prefix in card_def["static_bins"]:
-                number = generate_full_number(prefix, length)
-                results.append({
-                    "brand": brand,
-                    "label": label,
-                    "number": number,
-                    "formatted": format_card(number),
-                    "expiry": expiry,
-                    "cvv": cvv,
-                    "length": length,
-                })
+    Example with Amex partial "37976415610" (target length 15):
+
+    Step 1: Clean input -> "37976415610" (already clean)
+    Step 2: Calculate filler needed:
+             target_length - 1 - len(clean) = 15 - 1 - 11 = 3
+             We need 3 random filler digits before the check digit.
+    Step 3: Generate random filler -> e.g., "847"
+    Step 4: Construct PAN without check digit:
+             "37976415610" + "847" = "37976415610847"
+    Step 5: Calculate Luhn check digit for this string -> e.g., 3
+    Step 6: Full PAN = "37976415610847" + "3" = "379764156108473"
+    Step 7: Validate that it passes Luhn (assertion check)
+
+    Args:
+        partial: Known digits of the PAN (BIN + any fixed account digits)
+        target_length: Full PAN length (16 for Visa/MC/Discover, 15 for Amex)
+
+    Returns:
+        Complete PAN string of length `target_length` that passes Luhn
+
+    Raises:
+        ValueError: If the partial is longer than the target PAN
+    """
+    # Step 1: Strip any non-digit characters just in case
+    clean = "".join(c for c in partial if c.isdigit())
+
+    # Step 2: Calculate how many random filler digits we need
+    # Formula: target_length - 1 (for check digit) - len(known_partial)
+    # If this is negative, the partial is already too long for this card type
+    filler_count = target_length - 1 - len(clean)
+
+    if filler_count < 0:
+        raise ValueError(
+            f"Partial too long ({len(clean)} digits) for "
+            f"{target_length}-digit PAN"
+        )
+
+    # Step 3: Generate random filler digits
+    # Each digit is 0-9, chosen uniformly at random
+    filler = "".join(str(random.randint(0, 9)) for _ in range(filler_count))
+
+    # Step 4: Build the PAN without the check digit
+    # This is: known_partial + random_filler
+    pan_no_check = clean + filler
+
+    # Step 5: Calculate the correct Luhn check digit for this string
+    check_digit = calculate_check_digit(pan_no_check)
+
+    # Step 6: Append the check digit to get the full PAN
+    full_pan = pan_no_check + str(check_digit)
+
+    # Step 7: Sanity check - verify the PAN we just built passes Luhn
+    # This assertion will fail if there's a bug in calculate_check_digit
+    assert is_valid_luhn(full_pan), (
+        f"Generated PAN failed Luhn validation: {full_pan}"
+    )
+    assert len(full_pan) == target_length, (
+        f"Generated PAN length {len(full_pan)} != expected {target_length}"
+    )
+
+    return full_pan
+
+
+def generate_pans(brand_key: str, count: int = 50) -> list:
+    """
+    GENERATE MULTIPLE PANs FOR A GIVEN BRAND.
+
+    For each PAN to generate:
+    1. Pick a random entry from the brand's partials or bins list
+    2. Feed it to generate_pan_from_partial with the correct target length
+    3. Collect all results
+
+    Args:
+        brand_key: String key into the BRANDS dictionary ("1", "2", "3", or "4")
+        count: How many PANs to generate (default 50)
+
+    Returns:
+        List of valid PAN strings
+    """
+    config = BRANDS[brand_key]
+    pans = []
+
+    for _ in range(count):
+        # Check if this brand uses "partials" (known account digits)
+        # or "bins" (just the BIN prefix, rest is random)
+        if "partials" in config:
+            # Pick one of the user's partial PANs at random
+            partial = random.choice(config["partials"])
+            pan = generate_pan_from_partial(partial, config["length"])
+
+        elif "bins" in config:
+            # Pick one of the user's BINs at random
+            bin_str = random.choice(config["bins"])
+            pan = generate_pan_from_partial(bin_str, config["length"])
+
         else:
-            # Auto-generate from prefix list
-            for i in range(count_per_type):
-                prefix = random.choice(card_def["prefixes"])
-                # Expand short prefixes to reasonable account length
-                if len(prefix) < 6:
-                    expand_len = min(6, length - 2) - len(prefix)
-                    if expand_len > 0:
-                        prefix += ''.join(str(random.randint(0, 9)) for _ in range(expand_len))
-                number = generate_full_number(prefix, length)
-                results.append({
-                    "brand": brand,
-                    "label": label,
-                    "number": number,
-                    "formatted": format_card(number),
-                    "expiry": expiry,
-                    "cvv": cvv,
-                    "length": length,
-                })
+            # This should never happen if the config is set up correctly
+            raise ValueError(f"No partials or bins defined for {config['name']}")
 
-    return results
+        pans.append(pan)
+
+    return pans
 
 
-# ──────────────────────────────────────────────
-#  LUHN VALIDATION
-# ──────────────────────────────────────────────
+# =============================================================================
+# SECTION 4: USER INTERFACE
+# =============================================================================
 
-def luhn_validate(number: str) -> bool:
-    """Verify a complete card number passes Luhn."""
-    clean = number.replace(' ', '')
-    if not clean.isdigit():
-        return False
-    return luhn_check_digit(clean[:-1]) == int(clean[-1])
+def main():
+    """
+    Interactive menu that lets the user select a card brand and
+    generates 50 valid PANs for that brand.
+
+    Flow:
+    1. Print welcome banner
+    2. Show menu with card brands
+    3. User selects a brand (or exits)
+    4. Generate 50 PANs and display them
+    5. Show Luhn validation status
+    6. Loop back to menu
+    """
+    print("=" * 75)
+    print("  PAN Generator - Authorized Penetration Testing")
+    print("=" * 75)
+    print("  Calculates missing digits + Luhn check digit")
+    print("  from your known BINs and partial account numbers.")
+    print("  Every generated PAN passes Luhn validation.")
+    print("=" * 75)
+
+    # Main loop: keep showing the menu until the user exits
+    while True:
+        # -- Display menu ----------------------------------------------------
+        print("\nCard brands:")
+        for key, config in BRANDS.items():
+            # Determine whether this brand uses partials or BINs
+            source = "partials" if "partials" in config else "BINs"
+            count = len(config.get("partials", config.get("bins", [])))
+            print(f"  {key}. {config['name']} ({config['length']} digits, {count} {source})")
+        print("  0. Exit")
+
+        # -- Get user input --------------------------------------------------
+        choice = input("\nSelect brand: ").strip()
+
+        # -- Handle exit ----------------------------------------------------
+        if choice == "0":
+            print("Exiting.")
+            break
+
+        # -- Validate choice ------------------------------------------------
+        if choice not in BRANDS:
+            print("Invalid selection. Try again.")
+            continue
+
+        # -- Generate and display PANs --------------------------------------
+        brand_name = BRANDS[choice]["name"]
+
+        print(f"\nGenerating 50 {brand_name} PANs...\n")
+
+        # Generate 50 PANs for the selected brand
+        pans = generate_pans(choice, count=50)
+
+        # Print each PAN on its own line, numbered 1-50
+        for i, pan in enumerate(pans, 1):
+            print(f"  {pan}")
+
+        # -- Verify and report ----------------------------------------------
+        # Check that ALL generated PANs pass Luhn validation
+        all_valid = all(is_valid_luhn(p) for p in pans)
+        status = "ALL PASS" if all_valid else "SOME FAILED"
+        print(f"\n  Generated {len(pans)} {brand_name} PANs -- Luhn: {status}")
 
 
-# ──────────────────────────────────────────────
-#  OUTPUT
-# ──────────────────────────────────────────────
-
-def print_results(cards: list):
-    """Pretty-print all generated cards in a table."""
-    print("=" * 80)
-    print("  CARDGEN — Luhn-Valid Test Credit Card Generator")
-    print("  For authorized penetration testing only")
-    print("=" * 80)
-    print()
-
-    for c in cards:
-        valid = "✓" if luhn_validate(c["number"]) else "✗"
-        print(f"  [{c['brand']:18s}] {c['label']}")
-        print(f"  {'':20s} {c['formatted']}")
-        print(f"  {'':20s} Exp: {c['expiry']}  CVV/CID: {c['cvv']}")
-        print(f"  {'':20s} Luhn: {valid}")
-        print()
-
-    print("-" * 80)
-    print(f"  Total cards generated: {len(cards)}")
-    print("  All numbers verified via Luhn algorithm.")
-    print("=" * 80)
-
-
-def print_json(cards: list):
-    """Output cards as JSON (pipe to jq or redirect as needed)."""
-    import json
-    output = []
-    for c in cards:
-        output.append({
-            "brand": c["brand"],
-            "label": c["label"],
-            "number": c["number"],
-            "formatted": c["formatted"],
-            "expiry": c["expiry"],
-            "cvv": c["cvv"],
-            "luhn_valid": luhn_validate(c["number"]),
-        })
-    print(json.dumps(output, indent=2))
-
-
-# ──────────────────────────────────────────────
-#  MAIN
-# ──────────────────────────────────────────────
+# =============================================================================
+# SECTION 5: ENTRY POINT
+# =============================================================================
+# This block ensures the program only runs when executed directly
+# (not when imported as a module by another script).
 
 if __name__ == "__main__":
-    # Parse optional CLI args
-    count = 3
-    output_format = "table"
-
-    if len(sys.argv) > 1:
-        for arg in sys.argv[1:]:
-            if arg.startswith("--count="):
-                count = int(arg.split("=")[1])
-            elif arg == "--json":
-                output_format = "json"
-            elif arg in ("-h", "--help"):
-                print("Usage: python3 cardgen.py [--count=N] [--json]")
-                print("  --count=N   Cards per type (default: 3)")
-                print("  --json      Output in JSON format")
-                sys.exit(0)
-
-    cards = generate_cards(count_per_type=count)
-
-    if output_format == "json":
-        print_json(cards)
-    else:
-        print_results(cards)
+    main()
